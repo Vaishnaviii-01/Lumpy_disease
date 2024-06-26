@@ -1,0 +1,125 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+import PIL
+import tensorflow as tf
+
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.models import Sequential
+import pathlib
+
+# Replace 'path/to/local_directory' with the path to your local directory containing the dataset
+data_dir = pathlib.Path('data')
+
+# Verify that the specified directory exists
+if not data_dir.exists():
+    raise FileNotFoundError(f"Directory '{data_dir}' not found. Please provide the correct path.")
+
+# If you have downloaded and extracted the dataset manually, you can specify the path to it directly
+# data_dir = pathlib.Path('/path/to/extracted/dataset/flower_photos')
+
+# You can proceed with the rest of your code, such as data preprocessing, data loading, etc.
+NormalSkin = list(data_dir.glob('NormalSkin/*'))
+print(NormalSkin[0])
+PIL.Image.open(str(NormalSkin[0]))
+img_height,img_width=180,180
+batch_size=32
+train_ds = tf.keras.preprocessing.image_dataset_from_directory(
+  data_dir,
+  validation_split=0.2,
+  subset="training",
+  seed=123,
+  image_size=(img_height, img_width),
+  batch_size=batch_size)
+
+val_ds = tf.keras.preprocessing.image_dataset_from_directory(
+  data_dir,
+  validation_split=0.2,
+  subset="validation",
+  seed=123,
+  image_size=(img_height, img_width),
+  batch_size=batch_size)
+
+class_names = train_ds.class_names
+print(class_names)
+
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(10, 10))
+for images, labels in train_ds.take(1):
+  for i in range(9):
+    ax = plt.subplot(3, 3, i + 1)
+    plt.imshow(images[i].numpy().astype("uint8"))
+    plt.title(class_names[labels[i]])
+    plt.axis("off")
+
+num_classes = 2
+model = Sequential([
+  layers.Rescaling(1./255, input_shape=(img_height, img_width, 3)),
+  layers.Conv2D(16, 3, padding='same', activation='relu'),
+  layers.MaxPooling2D(),
+  layers.Conv2D(32, 3, padding='same', activation='relu'),
+  layers.MaxPooling2D(),
+  layers.Conv2D(64, 3, padding='same', activation='relu'),
+  layers.MaxPooling2D(),
+  layers.Flatten(),
+  layers.Dense(128, activation='relu'),
+  layers.Dense(num_classes, activation='softmax')
+])
+
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+epochs=10
+history = model.fit(
+  train_ds,
+  validation_data=val_ds,
+  epochs=epochs
+)
+
+import numpy as np
+from PIL import Image
+
+def preprocess_image(img):
+    # Resize the image to the desired dimensions
+    img = Image.fromarray(img)
+    img_resized = img.resize((180, 180))
+    # Convert the image back to a NumPy array
+    img_array = np.array(img_resized)
+    return img_array
+
+def predict_image(img):
+    
+    # Preprocess the input image
+    img_preprocessed = preprocess_image(img)
+    # Reshape the preprocessed image
+    img_4d = img_preprocessed.reshape(-1, 180, 180, 3)
+    # Make prediction using the model
+    prediction = model.predict(img_4d)[0]
+    # Get the index of the label with the highest probability
+    max_index = np.argmax(prediction)
+    # Get the label name corresponding to the max index
+    max_label = class_names[max_index]
+    return max_label
+    
+
+# Example usage:
+# Replace `your_image_array` with the actual image array you want to predict on
+# prediction_result = predict_image(your_image_array)
+
+from tensorflow.keras.models import load_model
+
+model.save(os.path.join('models','LumpyDetection.h5'))
+
+!pip install gradio
+
+import gradio as gr
+
+#image = gr.inputs.Image(shape=(180,180))
+#label = gr.outputs.Label(num_top_classes=5)
+
+iface=gr.Interface(fn=predict_image, inputs='image', outputs='text')
+iface.launch()
+
